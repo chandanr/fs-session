@@ -1,0 +1,126 @@
+From 8ad2d4ac89af963b4a9e1f173760daab2db2da99 Mon Sep 17 00:00:00 2001
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+Date: Thu, 26 Nov 2009 11:39:11 +0530
+Subject: [PATCH 5/7] Step5: Add address_space operations
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+ Makefile |  2 +-
+ file.c   | 45 +++++++++++++++++++++++++++++++++++++++++++++
+ super.c  |  7 +++++++
+ 3 files changed, 53 insertions(+), 1 deletion(-)
+ create mode 100644 file.c
+
+diff --git a/Makefile b/Makefile
+index 80ebc10..0d86122 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2,7 +2,7 @@
+ # Makefile for Linux samplefs
+ #
+ obj-m += samplefs.o
+-samplefs-objs := super.o inode.o
++samplefs-objs := super.o inode.o file.o
+ 
+ all:
+ 	$(MAKE) -C /lib/modules/$(shell uname -r)/build/ M=$(shell pwd)
+diff --git a/file.c b/file.c
+new file mode 100644
+index 0000000..7126f05
+--- /dev/null
++++ b/file.c
+@@ -0,0 +1,45 @@
++/*
++ *   fs/samplefs/file.c
++ *
++ *   Copyright (C) International Business Machines  Corp., 2006
++ *   Author(s): Steve French (sfrench@us.ibm.com)
++ *              Aneesh Kumar K.V (aneesh.kumar@linux.vnet.ibm.com)
++ *
++ *   Sample File System
++ *
++ *   Primitive example to show how to create a Linux filesystem module
++ *
++ *   File struct (file instance) related functions
++ *
++ *   This library is free software; you can redistribute it and/or modify
++ *   it under the terms of the GNU Lesser General Public License as published
++ *   by the Free Software Foundation; either version 2.1 of the License, or
++ *   (at your option) any later version.
++ *
++ *   This library is distributed in the hope that it will be useful,
++ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
++ *   the GNU Lesser General Public License for more details.
++ *
++ *   You should have received a copy of the GNU Lesser General Public License
++ *   along with this library; if not, write to the Free Software
++ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
++ */
++
++#include <linux/module.h>
++#include <linux/fs.h>
++
++struct address_space_operations sfs_aops = {
++	.readpage    = simple_readpage,
++	.write_begin = simple_write_begin,
++	.write_end   = simple_write_end,
++};
++
++struct file_operations sfs_file_operations = {
++	.read_iter           = generic_file_read_iter,
++	.write_iter          = generic_file_write_iter,
++	.mmap                = generic_file_mmap,
++	.fsync               = noop_fsync,
++	.llseek              = generic_file_llseek,
++};
++
+diff --git a/super.c b/super.c
+index 32c865a..7b0b32d 100644
+--- a/super.c
++++ b/super.c
+@@ -32,6 +32,7 @@
+ #include <linux/version.h>
+ #include <linux/slab.h>
+ #include <linux/sched.h>
++#include <linux/backing-dev.h>
+ #include "samplefs.h"
+ 
+ /* helpful if this is different than other fs */
+@@ -39,6 +40,9 @@
+ 
+ extern struct inode_operations sfs_dir_inode_ops;
+ extern struct inode_operations sfs_file_inode_ops;
++extern struct file_operations sfs_file_operations;
++extern struct address_space_operations sfs_aops;
++
+ static void samplefs_put_super(struct super_block *sb)
+ {
+ 	struct samplefs_sb_info *sfs_sb;
+@@ -60,6 +64,7 @@ struct super_operations samplefs_super_ops = {
+ 	.put_super      = samplefs_put_super,
+ };
+ 
++
+ struct inode *samplefs_get_inode(struct super_block *sb,
+ 				const struct inode *dir, int mode, dev_t dev)
+ {
+@@ -70,6 +75,7 @@ struct inode *samplefs_get_inode(struct super_block *sb,
+ 		inode_init_owner(inode, dir, mode);
+ 		inode->i_blocks = 0;
+ 		inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
++		inode->i_mapping->a_ops = &sfs_aops;
+ 		switch (mode & S_IFMT) {
+ 			default:
+ 				init_special_inode(inode, mode, dev);
+@@ -77,6 +83,7 @@ struct inode *samplefs_get_inode(struct super_block *sb,
+ 			case S_IFREG:
+ 				printk(KERN_INFO "file inode\n");
+ 				inode->i_op = &sfs_file_inode_ops;
++				inode->i_fop =  &sfs_file_operations;
+ 				break;
+ 			case S_IFDIR:
+ 				inode->i_op = &sfs_dir_inode_ops;
+-- 
+2.19.1
+

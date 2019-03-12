@@ -1,0 +1,25 @@
+From c80219e8ded993162dd2a8df12545bc04086bdf9 Mon Sep 17 00:00:00 2001
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+Date: Thu, 26 Nov 2009 11:37:25 +0530
+Subject: [PATCH 4/7] Step4: introduce file operations
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+---
+ super.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/super.c b/super.c
+index 749d3ca..32c865a 100644
+--- a/super.c
++++ b/super.c
+@@ -80,6 +80,7 @@ struct inode *samplefs_get_inode(struct super_block *sb,
+ 				break;
+ 			case S_IFDIR:
+ 				inode->i_op = &sfs_dir_inode_ops;
++				inode->i_fop = &simple_dir_operations;
+ 
+ 				/* link == 2 (for initial ".." and "." entries) */
+ 				inode_inc_link_count(inode);
+-- 
+2.19.1
+

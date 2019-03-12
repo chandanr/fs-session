@@ -1,0 +1,156 @@
+From 4f3a0664d30266f4947829c15d360e69bcf97726 Mon Sep 17 00:00:00 2001
+From: "Aneesh Kumar K.V" <aneesh.kumar@linux.vnet.ibm.com>
+Date: Thu, 26 Nov 2009 11:36:17 +0530
+Subject: [PATCH 3/7] Step3: Introduce directory operations
+
+Signed-off-by: Aneesh Kumar K.V <aneesh.kumar@linux.vnet.ibm.com>
+Signed-off-by: Chandan Rajendra <chandan@linux.vnet.ibm.com>
+---
+ Makefile |  3 +-
+ inode.c  | 93 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ super.c  |  6 ++--
+ 3 files changed, 98 insertions(+), 4 deletions(-)
+ create mode 100644 inode.c
+
+diff --git a/Makefile b/Makefile
+index 3aca17a..80ebc10 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2,8 +2,7 @@
+ # Makefile for Linux samplefs
+ #
+ obj-m += samplefs.o
+-
+-samplefs-objs := super.o
++samplefs-objs := super.o inode.o
+ 
+ all:
+ 	$(MAKE) -C /lib/modules/$(shell uname -r)/build/ M=$(shell pwd)
+diff --git a/inode.c b/inode.c
+new file mode 100644
+index 0000000..2b45d82
+--- /dev/null
++++ b/inode.c
+@@ -0,0 +1,93 @@
++/*
++ *   fs/samplefs/inode.c
++ *
++ *   Copyright (C) International Business Machines  Corp., 2006, 2007
++ *   Author(s): Steve French (sfrench@us.ibm.com)
++ *              Aneesh Kumar K.V (aneesh.kumar@linux.vnet.ibm.com)
++ *
++ *   Sample File System
++ *
++ *   Primitive example to show how to create a Linux filesystem module
++ *
++ *   Inode related functions
++ *
++ *   This library is free software; you can redistribute it and/or modify
++ *   it under the terms of the GNU Lesser General Public License as published
++ *   by the Free Software Foundation; either version 2.1 of the License, or
++ *   (at your option) any later version.
++ *
++ *   This library is distributed in the hope that it will be useful,
++ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
++ *   the GNU Lesser General Public License for more details.
++ *
++ *   You should have received a copy of the GNU Lesser General Public License
++ *   along with this library; if not, write to the Free Software
++ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
++ */
++
++#include <linux/module.h>
++#include <linux/fs.h>
++#include "samplefs.h"
++
++extern struct inode *samplefs_get_inode(struct super_block *sb,
++					const struct inode *dir,
++					int mode, dev_t dev);
++
++static int sfs_mknod(struct inode *dir, struct dentry *dentry,
++		umode_t mode, dev_t dev)
++{
++	struct inode * inode = samplefs_get_inode(dir->i_sb, dir, mode, dev);
++	int error = -ENOSPC;
++
++	printk(KERN_INFO "samplefs: mknod\n");
++	if (inode) {
++		if (dir->i_mode & S_ISGID) {
++			inode->i_gid = dir->i_gid;
++			if (S_ISDIR(mode))
++				inode->i_mode |= S_ISGID;
++		}
++		d_instantiate(dentry, inode);
++		dget(dentry);   /* Extra count - pin the dentry in core */
++		error = 0;
++		dir->i_mtime = dir->i_ctime = current_time(dir);
++
++		/* real filesystems would normally use i_size_write function */
++		dir->i_size += 0x20;  /* bogus small size for each dir entry */
++	}
++	return error;
++}
++
++
++static int sfs_mkdir(struct inode * dir, struct dentry * dentry, umode_t mode)
++{
++	int retval = 0;
++
++	retval = sfs_mknod(dir, dentry, mode | S_IFDIR, 0);
++
++	/* link count is two for dir, for dot and dot dot */
++	if (!retval)
++		inode_inc_link_count(dir);
++
++	return retval;
++}
++
++static int sfs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
++		bool excl)
++{
++	return sfs_mknod(dir, dentry, mode | S_IFREG, 0);
++}
++
++struct inode_operations sfs_file_inode_ops = {
++	.getattr        = simple_getattr,
++};
++
++struct inode_operations sfs_dir_inode_ops = {
++	.create         = sfs_create,
++	.lookup         = simple_lookup,
++	.unlink         = simple_unlink,
++	.mkdir          = sfs_mkdir,
++	.rmdir          = simple_rmdir,
++	.mknod          = sfs_mknod,
++	.rename         = simple_rename,
++};
+diff --git a/super.c b/super.c
+index add7b83..749d3ca 100644
+--- a/super.c
++++ b/super.c
+@@ -37,6 +37,8 @@
+ /* helpful if this is different than other fs */
+ #define SAMPLEFS_MAGIC     0x73616d70 /* "SAMP" */
+ 
++extern struct inode_operations sfs_dir_inode_ops;
++extern struct inode_operations sfs_file_inode_ops;
+ static void samplefs_put_super(struct super_block *sb)
+ {
+ 	struct samplefs_sb_info *sfs_sb;
+@@ -74,10 +76,10 @@ struct inode *samplefs_get_inode(struct super_block *sb,
+ 				break;
+ 			case S_IFREG:
+ 				printk(KERN_INFO "file inode\n");
+-				inode->i_op = &simple_dir_inode_operations;
++				inode->i_op = &sfs_file_inode_ops;
+ 				break;
+ 			case S_IFDIR:
+-				inode->i_op = &simple_dir_inode_operations;
++				inode->i_op = &sfs_dir_inode_ops;
+ 
+ 				/* link == 2 (for initial ".." and "." entries) */
+ 				inode_inc_link_count(inode);
+-- 
+2.19.1
+
